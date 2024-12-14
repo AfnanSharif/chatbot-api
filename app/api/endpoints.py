@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List
 import google.generativeai as genai
 from pinecone import Pinecone
-from app.core.config import PINECONE_API_KEY, GEMINI_API_KEY, INDEX_NAME
+from app.core.config import PINECONE_API_KEY, GEMINI_API_KEY, INDEX_NAME  # Assuming a default index name is defined
 
 router = APIRouter()
 
@@ -14,9 +14,9 @@ genai.configure(api_key=GEMINI_API_KEY)
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
 class QueryRequest(BaseModel):
-    query: str
-    index_name: str
+    query: str  # Only query is required now
 
+# Function to query Gemini for embeddings
 def query_gemini(query: str) -> List[float]:
     try:
         result = genai.embed_content(model="models/text-embedding-004", content=[query])
@@ -26,6 +26,7 @@ def query_gemini(query: str) -> List[float]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying Gemini: {str(e)}")
 
+# Function to query Pinecone
 def query_pinecone(index_name: str, query_vector: List[float], top_k: int = 5):
     index = pc.Index(index_name)
     try:
@@ -33,6 +34,7 @@ def query_pinecone(index_name: str, query_vector: List[float], top_k: int = 5):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying Pinecone: {str(e)}")
 
+# Function to generate response using Gemini
 def generate_response(question: str, context: str) -> str:
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     prompt = (
@@ -49,22 +51,26 @@ def generate_response(question: str, context: str) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
 
+# API Route for handling queries
 @router.api_route("/query/", methods=["GET", "POST"])
 async def perform_query(request: Request):
+    print("Received request", request.body)
+
+    # Default index name
+    index_name = INDEX_NAME  # Use default index if no index_name is provided
+
     if request.method == "GET":
         query = request.query_params.get("query")
-        index_name = request.query_params.get("index_name")
     elif request.method == "POST":
         body = await request.json()
         query = body.get("query")
-        index_name = body.get("index_name")
     else:
         raise HTTPException(status_code=405, detail="Method not allowed")
-    
+
     # Validate input
-    if not query or not index_name:
-        raise HTTPException(status_code=400, detail="Missing query or index_name parameter")
-    
+    if not query:
+        raise HTTPException(status_code=400, detail="Missing query parameter")
+
     # Generate embedding for the query
     query_embedding = query_gemini(query)
     if not query_embedding:
@@ -86,4 +92,4 @@ async def perform_query(request: Request):
     
     # Generate response
     response = generate_response(query, combined_context)
-    return {"response": response}
+    return {"response":response}
